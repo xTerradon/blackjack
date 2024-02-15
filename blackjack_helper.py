@@ -48,7 +48,20 @@ def get_dealer_possibilities(cards=[]):
     if len(cards) == 0:
         possible_hands = np.array([[0]])
     else:
-        possible_hands = np.array([(np.array(cards) == 11).astype(int), cards]).T
+        possible_hands = np.array([[int(np.sum(np.array(cards) == 11))]+list(cards)]).T.reshape(1,-1)
+
+    scores = possible_hands[:,1:].sum(axis=1)
+    scores[scores > 21] -= np.min((
+        possible_hands[(scores > 21),0], #10
+        ((scores[(scores > 21)]-12)//10) #126 // 10 = 12
+    ), axis=0)*10
+    # print(scores)
+
+    new_finished_hands = possible_hands[scores >= 17,:]
+    possible_hands = possible_hands[scores < 17,:]
+
+    finished_hands = pd.concat([finished_hands, pd.DataFrame(new_finished_hands)], axis=0).fillna(0).astype(int)
+
 
     while len(possible_hands) > 0:
         possible_hands = np.hstack((
@@ -79,7 +92,11 @@ def get_dealer_possibilities(cards=[]):
 
     finished_hands["Score"] = finished_scores
 
-    res = pd.DataFrame({"Count":finished_hands["Score"].value_counts().sort_index()})
+    res = pd.DataFrame(index=[0, 17, 18, 19, 20, 21], columns=["Count"]).fillna(0)
+    res["Count"] = finished_hands["Score"].value_counts().sort_index()
+    res["Count"] = res["Count"].fillna(0).astype(int)
+
+    # res = pd.DataFrame({"Count":finished_hands["Score"].value_counts().sort_index()})
     return res
 
 def plot_dealer_possibilities(cards=[]):
