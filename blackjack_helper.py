@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-DECK_NAME = np.array(["2", "3", "4", "5", "6", "7", "8", "9", "10", "A"])
-STARTING_DECK = np.array([4, 4, 4, 4, 4, 4, 4, 4, 4, 16])
-DECK_VALUES = np.array([2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+DECK_NAME = np.array(["10/J/Q/K", "A","2", "3", "4", "5", "6", "7", "8", "9"])
+STARTING_DECK = np.array([16, 4, 4, 4, 4, 4, 4, 4, 4, 4])
+DECK_VALUES = np.array([10, 11, 2, 3, 4, 5, 6, 7, 8, 9])
 
 HAND_NAME = np.array(["P_S","P_A","D_S","D_A","2","3","4","5","6","7","8","9","10","A"])
 
@@ -42,7 +42,7 @@ def print_hand(hand):
     df.loc[0] = hand
     print(df)
 
-def get_dealer_possibilities(cards=[]):
+def get_dealer_hands(cards=[]):
     finished_hands = pd.DataFrame([])
 
     if len(cards) == 0:
@@ -91,6 +91,10 @@ def get_dealer_possibilities(cards=[]):
     finished_scores[finished_scores > 21] = 0
 
     finished_hands["Score"] = finished_scores
+    return finished_hands.reset_index(drop=True)
+
+def get_dealer_possibilities(cards=[]):
+    finished_hands = get_dealer_hands(cards)
 
     res = pd.DataFrame(index=[0, 17, 18, 19, 20, 21], columns=["Count"]).fillna(0)
     res["Count"] = finished_hands["Score"].value_counts().sort_index()
@@ -106,7 +110,46 @@ def plot_dealer_possibilities(cards=[]):
     res.plot(kind="pie", ax=axes[0], autopct='%1.2f%%', startangle=90, ylabel="", subplots=True, legend=False, colors=list(COLORS.values()))
     axes[1].bar(res.index.astype(str), res["Count"], width=0.9, color=[COLORS[x] for x in res.index])
 
-    fig.suptitle("Dealer Scores Analysis", fontsize=16)
+    fig.suptitle(f"Dealer Scores Analysis with cards: {cards}", fontsize=16)
+
+def get_dealer_hand_probabilities(cards=[], deck=get_deck()):
+    possible_hands_prob = get_dealer_hands(cards).copy()
+    possible_hands_prob["Probability"] = None
+
+    for i, row in possible_hands_prob.iterrows():
+        score = row["Score"]
+        row = row.values[1:-2]
+        row = row[row > 0]
+        print(score, row)
+
+        deck_copy = deck.copy()
+        probability = 1.0
+
+        for element in row:
+            print(f"el {element%10} with {deck_copy[element%10]} left. Prob: {deck_copy[element%10] / deck_copy.sum()}")
+            probability *= deck_copy[element%10] / deck_copy.sum()
+            if deck_copy[element%10] > 0:
+                deck_copy[element%10] -= 1
+            else:
+                break
+        possible_hands_prob.loc[i, "Probability"] = probability
+                    
+    return possible_hands_prob
+
+def get_dealer_score_probabilities(cards=[], deck=get_deck()):
+    possible_hands_prob = get_dealer_hand_probabilities(cards, deck)
+    scores_prob = possible_hands_prob.groupby("Score").agg({"Probability": "sum"})
+    return scores_prob
+
+def plot_dealer_score_probabilities(cards=[], deck=get_deck()):
+    scores_prob = get_dealer_score_probabilities(cards, deck)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={'width_ratios': [1, 2]})
+
+    scores_prob.plot(kind="pie", ax=axes[0], autopct='%1.2f%%', startangle=90, ylabel="", subplots=True, legend=False, colors=list(COLORS.values()))
+    axes[1].bar(scores_prob.index.astype(str), scores_prob["Probability"], width=0.9, color=[COLORS[x] for x in scores_prob.index])
+
+    fig.suptitle(f"Dealer Scores Probabilities with cards: {cards}", fontsize=16)
 
 if __name__ == "__main__":
-    plot_dealer_possibilities()
+    pass
