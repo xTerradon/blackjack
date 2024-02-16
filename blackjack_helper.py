@@ -103,6 +103,8 @@ def game_player_hit(game, card=None):
 
     # TODO: player play mechanism
 
+    return game
+
 def get_dealer_hands(cards=[]):
     finished_hands = pd.DataFrame([])
 
