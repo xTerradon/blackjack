@@ -2,11 +2,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-DECK_NAME = np.array(["10/J/Q/K", "A","2", "3", "4", "5", "6", "7", "8", "9"])
+DECK_NAME = np.array(["10", "A","2", "3", "4", "5", "6", "7", "8", "9"])
 STARTING_DECK = np.array([16, 4, 4, 4, 4, 4, 4, 4, 4, 4])
 DECK_VALUES = np.array([10, 11, 2, 3, 4, 5, 6, 7, 8, 9])
 
-HAND_NAME = np.array(["P_S","P_A","D_S","D_A","2","3","4","5","6","7","8","9","10","A"])
+HAND_NAME = np.array(["P_S","P_A","D_S"]+list(DECK_NAME))
+
+GAME_NAME = np.array(["Prob"]+list(HAND_NAME))
 
 COLORS = {0:"tomato", 17:"orange", 18:"yellow", 19:"greenyellow", 20:"limegreen", 21:"deepskyblue"}
 
@@ -31,8 +33,32 @@ def plot_deck(deck):
     plt.xticks(np.arange(len(DECK_NAME)), DECK_NAME)
     plt.show()
 
-def get_hand(deck=get_deck()):
-    return np.array([0,0,0,0] + list(deck))
+def deck_remove_card(deck, card):
+    deck = deck.copy()
+    deck[card%10] -= 1
+    return deck
+
+def get_hand(deck=get_deck(), dealer_card=None, player_cards=[]):
+    deck = deck.copy()
+    if dealer_card is not None:
+        deck = deck_remove_card(deck, dealer_card)
+    else:
+        dealer_card = 0
+    
+    player_score = 0
+    player_aces = 0
+    for card in player_cards:
+        deck = deck_remove_card(deck, card)
+        if card == 11:
+            player_aces += 1
+        player_score += card
+    
+    # TODO: efficiency
+    while player_score > 21 and player_aces > 0:
+        player_score -= 10
+        player_aces -= 1
+
+    return np.array([player_score,player_aces,dealer_card] + list(deck))
 
 def print_hand(hand):
     assert type(hand) is np.ndarray, f"hand is not a numpy array, but {type(hand)}"
@@ -41,6 +67,41 @@ def print_hand(hand):
     df = pd.DataFrame([], columns=HAND_NAME)
     df.loc[0] = hand
     print(df)
+
+
+def get_game(deck=get_deck(), dealer_card=None, player_cards=[]):
+    hand = get_hand(deck, dealer_card, player_cards)
+    game = np.array([[1.0]+list(hand)])
+    return game
+
+def print_game(game):
+    df = pd.DataFrame(game, columns=GAME_NAME).astype(dict(zip(GAME_NAME,[float]+[int]*(len(HAND_NAME)))))
+    print(df)
+
+def game_dealer_first_card(game, card=None):
+    assert game.shape == (1, len(GAME_NAME)), f"game has shape {game.shape}, not (1, {len(GAME_NAME)})"
+
+    game = game.copy()
+    if card != None:
+        game[0,3] = card
+        game[0,4:14] = deck_remove_card(game[0,4:14], card)
+    else:
+        game = np.tile(game, (10,1))
+        game[:,3] = DECK_VALUES
+
+        # update probabilties
+        game[:,0] *= (np.diagonal(game[:,4:14]) / (game[:,4:14]).sum(axis=1))
+
+        # update deck
+        game[:,4:14] = game[:,4:14] - np.diag(np.ones(10))
+    return game
+
+def game_player_hit(game, card=None):
+    assert len(game.shape) == 2, f"game is not a 2D array, but {len(game.shape)}D"
+    assert game.shape[1] == len(GAME_NAME), f"game has {game.shape[1]} columns, not {len(GAME_NAME)}"
+    assert np.all(game[:,3] > 0), f"dealer has not yet drawn a card"
+
+    # TODO: player play mechanism
 
 def get_dealer_hands(cards=[]):
     finished_hands = pd.DataFrame([])
@@ -91,6 +152,8 @@ def get_dealer_hands(cards=[]):
     finished_scores[finished_scores > 21] = 0
 
     finished_hands["Score"] = finished_scores
+    finished_hands.rename(columns={0:"Aces"}, inplace=True)
+
     return finished_hands.reset_index(drop=True)
 
 def get_dealer_possibilities(cards=[]):
@@ -112,6 +175,12 @@ def plot_dealer_possibilities(cards=[]):
 
     fig.suptitle(f"Dealer Scores Analysis with cards: {cards}", fontsize=16)
 
+def update_deck_with_cards(deck, cards):
+    deck = deck.copy()
+    for card in cards:
+        deck[card%10] -= 1
+    return deck
+
 def get_dealer_hand_probabilities(cards=[], deck=get_deck()):
     possible_hands_prob = get_dealer_hands(cards).copy()
     possible_hands_prob["Probability"] = None
@@ -120,13 +189,13 @@ def get_dealer_hand_probabilities(cards=[], deck=get_deck()):
         score = row["Score"]
         row = row.values[1:-2]
         row = row[row > 0]
-        print(score, row)
+        # print(score, row)
 
         deck_copy = deck.copy()
         probability = 1.0
 
         for element in row:
-            print(f"el {element%10} with {deck_copy[element%10]} left. Prob: {deck_copy[element%10] / deck_copy.sum()}")
+            # print(f"el {element%10} with {deck_copy[element%10]} left. Prob: {deck_copy[element%10] / deck_copy.sum()}")
             probability *= deck_copy[element%10] / deck_copy.sum()
             if deck_copy[element%10] > 0:
                 deck_copy[element%10] -= 1
