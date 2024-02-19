@@ -75,7 +75,17 @@ def get_game(deck=get_deck(), dealer_card=None, player_cards=[]):
     return game
 
 def print_game(game):
-    df = pd.DataFrame(game, columns=GAME_NAME).astype(dict(zip(GAME_NAME,[float]+[int]*(len(HAND_NAME)))))
+    assert type(game) is np.ndarray, f"game is not a numpy array, but {type(game)}"
+
+    rounds = game.shape[1] - 14
+    round_columns = [f"R{i}" for i in range(1,rounds+1)]
+
+    df = pd.DataFrame(game, columns=list(GAME_NAME)+round_columns).astype(
+        dict(zip(
+            list(GAME_NAME)+round_columns,
+            [float]+[int]*(len(HAND_NAME)+len(round_columns))
+        ))
+    )
     print(df)
 
 def game_dealer_first_card(game, card=None):
@@ -98,10 +108,42 @@ def game_dealer_first_card(game, card=None):
 
 def game_player_hit(game, card=None):
     assert len(game.shape) == 2, f"game is not a 2D array, but {len(game.shape)}D"
-    assert game.shape[1] == len(GAME_NAME), f"game has {game.shape[1]} columns, not {len(GAME_NAME)}"
+    assert game.shape[1] >= len(GAME_NAME), f"game has less than {game.shape[1]} columns"
     assert np.all(game[:,3] > 0), f"dealer has not yet drawn a card"
 
-    # TODO: player play mechanism
+    game_new = game.copy()
+    orig_shape = game.shape
+
+    # add indicator for standing
+    game = np.hstack((game, np.zeros((game.shape[0], 1))))
+
+    # add indicator for hitting
+    game_new = np.hstack((game_new, np.ones((game_new.shape[0], 1))))  
+
+    if card != None:
+        game_new[:,1] += (card%10)
+        game_new[:,2] += (card%10 == 11).astype(int)
+        game_new[:,4+(card%10)] -= 1
+
+        game_new[:,0] *= (game_new[:,4+(card%10)] / (game_new[:,4:14]).sum(axis=1))
+    else:
+        game_new = np.repeat(game_new, 10, axis=0)
+        # print(game_new, game_new.shape)
+        game_new[:,2] += np.tile(DECK_VALUES == 11, orig_shape[0]).astype(int)
+        game_new[:,1] += np.tile(DECK_VALUES, orig_shape[0])
+        game_new[:,4:14] = game_new[:,4:14] - np.tile(np.diag(np.ones(10)), (orig_shape[0],1))
+
+        # TODO: scaling with tile / repeat
+        game_new[:,0] *= (np.diagonal(game_new[:,4:14]) / (game_new[:,4:14]).sum(axis=1))
+    
+    while np.any(np.logical_and(game_new[:,1] > 21,game_new[:,2] > 0)):
+        # print_game(game_new[np.logical_and(game_new[:,1] > 21,game_new[:,2] > 0), :])
+        game_new[np.logical_and(game_new[:,1] > 21,game_new[:,2] > 0), 1:3] -= (10,1)
+
+    # TODO: bust handling?
+
+    # combine hitting and standing
+    game = np.vstack((game, game_new))
 
     return game
 
@@ -184,6 +226,8 @@ def update_deck_with_cards(deck, cards):
     return deck
 
 def get_dealer_hand_probabilities(cards=[], deck=get_deck()):
+    assert deck.shape == (10,), f"deck has shape {deck.shape}, not (10,)"
+
     possible_hands_prob = get_dealer_hands(cards).copy()
     possible_hands_prob["Probability"] = None
 
@@ -208,11 +252,15 @@ def get_dealer_hand_probabilities(cards=[], deck=get_deck()):
     return possible_hands_prob
 
 def get_dealer_score_probabilities(cards=[], deck=get_deck()):
+    assert deck.shape == (10,), f"deck has shape {deck.shape}, not (10,)"
+
     possible_hands_prob = get_dealer_hand_probabilities(cards, deck)
     scores_prob = possible_hands_prob.groupby("Score").agg({"Probability": "sum"})
     return scores_prob
 
 def plot_dealer_score_probabilities(cards=[], deck=get_deck()):
+    assert deck.shape == (10,), f"deck has shape {deck.shape}, not (10,)"
+
     scores_prob = get_dealer_score_probabilities(cards, deck)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={'width_ratios': [1, 2]})
@@ -221,6 +269,25 @@ def plot_dealer_score_probabilities(cards=[], deck=get_deck()):
     axes[1].bar(scores_prob.index.astype(str), scores_prob["Probability"], width=0.9, color=[COLORS[x] for x in scores_prob.index])
 
     fig.suptitle(f"Dealer Scores Probabilities with cards: {cards}", fontsize=16)
+
+def get_win_lose_prob(game):
+    assert game.shape == (1, len(GAME_NAME)), f"game has shape {game.shape}, not (1, {len(GAME_NAME)})"
+
+    dealer_card = list(game[0,3:4])
+    deck = game[0,4:14]
+
+    player_score = game[0,1]
+
+    scores_prob = get_dealer_score_probabilities(dealer_card, deck)
+
+    win = scores_prob.loc[scores_prob.index < player_score,"Probability"].sum()
+    lose = scores_prob.loc[scores_prob.index > player_score,"Probability"].sum()
+    draw = scores_prob.loc[scores_prob.index == player_score,"Probability"].sum()
+
+    # print(f"Win: {win:.2f}, Lose: {lose:.2f}, Draw: {draw:.2f}")
+
+    return pd.DataFrame({"Win":win, "Lose":lose, "Draw":draw}, index=[0])
+
 
 if __name__ == "__main__":
     pass
