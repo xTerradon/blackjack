@@ -74,7 +74,10 @@ def get_game(deck=get_deck(), dealer_card=None, player_cards=[]):
     game = np.array([[1.0]+list(hand)])
     return game
 
-def print_game(game):
+def print_game(game):    
+    print(get_game_df(game))
+
+def get_game_df(game):
     assert type(game) is np.ndarray, f"game is not a numpy array, but {type(game)}"
 
     rounds = game.shape[1] - 14
@@ -86,7 +89,7 @@ def print_game(game):
             [float]+[int]*(len(HAND_NAME)+len(round_columns))
         ))
     )
-    print(df)
+    return df
 
 def game_dealer_first_card(game, card=None):
     assert game.shape == (1, len(GAME_NAME)), f"game has shape {game.shape}, not (1, {len(GAME_NAME)})"
@@ -112,33 +115,47 @@ def game_player_hit(game, card=None):
     assert np.all(game[:,3] > 0), f"dealer has not yet drawn a card"
 
     game_new = game.copy()
-    orig_shape = game.shape
 
     # add indicator for standing
     game = np.hstack((game, np.zeros((game.shape[0], 1))))
+    
+    game_new = game_new[game_new[:,1] < 22, :] # bust hands
+    if game_new.shape[1] > 14: # if round
+        game_new = game_new[game_new[:,-1] == 1, :] # no standing
 
     # add indicator for hitting
-    game_new = np.hstack((game_new, np.ones((game_new.shape[0], 1))))  
+    game_new = np.hstack((game_new, np.ones((game_new.shape[0], 1)))) 
+    game_new_shape = game_new.shape
+
 
     if card != None:
         game_new[:,1] += (card%10)
-        game_new[:,2] += (card%10 == 11).astype(int)
+        game_new[:,2] += np.asarray((card%10 == 11)).astype(int)
         game_new[:,4+(card%10)] -= 1
 
-        game_new[:,0] *= (game_new[:,4+(card%10)] / (game_new[:,4:14]).sum(axis=1))
+        # game_new[:,0] *= (game_new[:,4+(card%10)] / (game_new[:,4:14]).sum(axis=1))
     else:
         game_new = np.repeat(game_new, 10, axis=0)
         # print(game_new, game_new.shape)
-        game_new[:,2] += np.tile(DECK_VALUES == 11, orig_shape[0]).astype(int)
-        game_new[:,1] += np.tile(DECK_VALUES, orig_shape[0])
-        game_new[:,4:14] = game_new[:,4:14] - np.tile(np.diag(np.ones(10)), (orig_shape[0],1))
+        game_new[:,2] += np.tile(DECK_VALUES == 11, game_new_shape[0]).astype(int)
+        game_new[:,1] += np.tile(DECK_VALUES, game_new_shape[0])
+        game_new[:,0] *= (np.tile(np.diagonal(game_new[:,4:14]), game_new_shape[0]) / (game_new[:,4:14]).sum(axis=1))
+
+        game_new[:,4:14] -= np.tile(np.diag(np.ones(10)), (game_new_shape[0],1))
 
         # TODO: scaling with tile / repeat
-        game_new[:,0] *= (np.diagonal(game_new[:,4:14]) / (game_new[:,4:14]).sum(axis=1))
+        # print(game_new[:,0].shape)
+        # print_game(game_new)
+        # print(np.tile(np.diagonal(game_new[:,4:14]), game_new_shape[0]))
+        # print((game_new[:,4:14]).sum(axis=1))
+        # print((np.diagonal(game_new[:,4:14]) / (game_new[:,4:14]).sum(axis=1)))
     
     while np.any(np.logical_and(game_new[:,1] > 21,game_new[:,2] > 0)):
         # print_game(game_new[np.logical_and(game_new[:,1] > 21,game_new[:,2] > 0), :])
         game_new[np.logical_and(game_new[:,1] > 21,game_new[:,2] > 0), 1:3] -= (10,1)
+
+    if card != None:
+        return game_new
 
     # TODO: bust handling?
 
@@ -271,7 +288,8 @@ def plot_dealer_score_probabilities(cards=[], deck=get_deck()):
     fig.suptitle(f"Dealer Scores Probabilities with cards: {cards}", fontsize=16)
 
 def get_win_lose_prob(game):
-    assert game.shape == (1, len(GAME_NAME)), f"game has shape {game.shape}, not (1, {len(GAME_NAME)})"
+    assert game.shape[0] == 1, f"only 1 game supported for now"
+    assert len(game.shape) == 2, f"game is not a 2D array, but {len(game.shape)}D"
 
     dealer_card = list(game[0,3:4])
     deck = game[0,4:14]
